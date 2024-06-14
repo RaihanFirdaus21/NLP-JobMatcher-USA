@@ -12,7 +12,6 @@ import nltk
 nltk.download('stopwords')
 nltk.download('punkt')
 nltk.download('wordnet')
-nltk.download('wordnet', quiet=True)
 
 # Load dataset
 final_data = pd.read_csv('dataset.csv')
@@ -25,8 +24,6 @@ final_data['tipe_pendaftaran'] = final_data['tipe_pendaftaran'].replace({
     'OffsiteApply': 'Offsite Apply', 
     'SimpleOnsiteApply': 'Simple Onsite Apply'
 })
-
-
 
 # Load precomputed embeddings and dataset if available (to save time)
 with open('model_components.pkl', 'rb') as f:
@@ -47,6 +44,18 @@ def get_average_glove(tokens, model, num_features):
         return np.zeros(num_features)
     return np.mean([model[word] for word in valid_words], axis=0)
 
+# Initialize session state variables
+if 'selected_state' not in st.session_state:
+    st.session_state.selected_state = 'Any'
+if 'selected_city' not in st.session_state:
+    st.session_state.selected_city = 'Any'
+if 'selected_type' not in st.session_state:
+    st.session_state.selected_type = 'Any'
+if 'selected_sponsor' not in st.session_state:
+    st.session_state.selected_sponsor = 'Any'
+if 'selected_apply' not in st.session_state:
+    st.session_state.selected_apply = 'Any'
+
 # Streamlit app
 st.title('Job Recommendation System')
 
@@ -62,34 +71,30 @@ type_options = np.concatenate([np.array(['Any']), type_options])
 sponsor_options = np.concatenate([np.array(['Any']), sponsor_options])
 apply_options = np.concatenate([np.array(['Any']), apply_options])
 
-selected_state = st.selectbox('Select State', state_option)
+selected_state = st.selectbox('Select State', state_option, index=np.where(state_option == st.session_state.selected_state)[0][0])
+st.session_state.selected_state = selected_state
+
 if selected_state == 'Any':
     city_option = ['Any']
 else:
     city_option = final_data[final_data['state'] == selected_state]['city'].unique()
-    index = np.where(city_option == 'Any')[0]
     city_option = np.sort(city_option)
-    city_option = np.insert(np.delete(city_option, index), 0, 'Any')
+    city_option = np.insert(city_option, 0, 'Any')
 
+selected_city = st.selectbox('Select City', city_option, index=np.where(city_option == st.session_state.selected_city)[0][0])
+st.session_state.selected_city = selected_city
 
+selected_type = st.selectbox('Select Job Type', type_options, index=np.where(type_options == st.session_state.selected_type)[0][0])
+st.session_state.selected_type = selected_type
 
-selected_city = st.selectbox('Select City', city_option)
-selected_type = st.selectbox('Select Job Type', type_options)
-selected_sponsor = st.selectbox('Select Sponsor Type', sponsor_options)
-selected_apply = st.selectbox('Select Application Type', apply_options)
+selected_sponsor = st.selectbox('Select Sponsor Type', sponsor_options, index=np.where(sponsor_options == st.session_state.selected_sponsor)[0][0])
+st.session_state.selected_sponsor = selected_sponsor
 
-# city_filter = (final_data['city'] == selected_city) if selected_state != 'Any' else (final_data['city'] == final_data['city'])
+selected_apply = st.selectbox('Select Application Type', apply_options, index=np.where(apply_options == st.session_state.selected_apply)[0][0])
+st.session_state.selected_apply = selected_apply
 
-if selected_state != 'Any':
-    if selected_city != 'Any':
-        city_filter = final_data['city'] == selected_city
-    else:
-        city_filter = final_data['state'] == selected_state
-    # else:
-    #     city_filter = final_data['city'] == final_data['city']
-elif selected_state == 'Any':
-    city_filter = final_data['city'] == final_data['city']
-
+# Filter data based on selected categories
+city_filter = (final_data['city'] == selected_city) if selected_state != 'Any' and selected_city != 'Any' else (final_data['state'] == selected_state if selected_state != 'Any' else final_data['city'] == final_data['city'])
 type_filter = (final_data['jenis_pekerjaan'] == selected_type) if selected_type != 'Any' else (final_data['jenis_pekerjaan'] == final_data['jenis_pekerjaan'])
 sponsor_filter = (final_data['disponsori'] == selected_sponsor) if selected_sponsor != 'Any' else (final_data['disponsori'] == final_data['disponsori'])
 apply_filter = (final_data['tipe_pendaftaran'] == selected_apply) if selected_apply != 'Any' else (final_data['tipe_pendaftaran'] == final_data['tipe_pendaftaran'])
@@ -98,9 +103,7 @@ apply_filter = (final_data['tipe_pendaftaran'] == selected_apply) if selected_ap
 new_text = st.text_area('Enter New Skill Description')
 
 if st.button('Search Jobs'):
-    
     if new_text:
-        # Filter data based on selected categories
         filtered_data = final_data[(city_filter) & (type_filter) & (sponsor_filter) & (apply_filter)]
         
         if filtered_data.shape[0] == 0:
@@ -109,15 +112,11 @@ if st.button('Search Jobs'):
             filtered_indices = filtered_data.index
             filtered_embeddings = corpus_embeddings[filtered_indices]
 
-            # Preprocess and embed the new input text
             input_tokens = word_tokenize(new_text.lower())
             input_tokens = [lemmatizer.lemmatize(word) for word in input_tokens if word not in stop_words]
             input_embedding = get_average_glove(input_tokens, glove_vectors, num_features)
 
-            # Compute cosine similarities
             cosine_sim_new = cosine_similarity([input_embedding], filtered_embeddings).flatten()
-
-            # Get top 10 similar jobs
             top_3_indices = cosine_sim_new.argsort()[-3:][::-1]
             top_3_jobs = filtered_data.iloc[top_3_indices][['judul', 'url_posting_pekerjaan']]
 
