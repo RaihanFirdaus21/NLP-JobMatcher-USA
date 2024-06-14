@@ -4,3 +4,4 @@ numpy
 scikit-learn
 nltk
 gensim
+scipy==1.10.1
